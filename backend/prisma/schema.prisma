@@ -1,0 +1,596 @@
+// Prisma schema for EduPulse AI Student Progress & Assessment Platform
+// Database: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  FACULTY
+  ADMIN
+}
+
+enum LearningLevel {
+  Beginner
+  Basic
+  Intermediate
+  Advanced
+  Proficient
+}
+
+enum QuestionType {
+  MCQ
+  FILL_IN_BLANK
+  SHORT_ANSWER
+  CODING
+}
+
+enum AssessmentType {
+  MCQ
+  FILL_IN_BLANK
+  SHORT_ANSWER
+  MIXED
+  CODING
+}
+
+enum AssessmentDifficulty {
+  Easy
+  Medium
+  Hard
+}
+
+enum DocumentStatus {
+  Pending
+  Processing
+  Processed
+  Failed
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  COMPLETED
+  TIMED_OUT
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum PriorityLevel {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ALERT
+}
+
+// 1. User & Identity
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  passwordHash String
+  name         String
+  role         Role          @default(STUDENT)
+  avatarUrl    String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  studentProfile StudentProfile?
+  facultyProfile FacultyProfile?
+  auditLogs      AuditLog[]
+  notifications  Notification[]
+  assessments    Assessment[]
+  documents      StudyDocument[]
+
+  @@index([email])
+  @@index([role])
+}
+
+// 2. Student Profile
+model StudentProfile {
+  id                 String        @id @default(cuid())
+  userId             String        @unique
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rollNumber         String        @unique
+  departmentId       String
+  department         Department    @relation(fields: [departmentId], references: [id])
+  sectionId          String?
+  section            Section?      @relation(fields: [sectionId], references: [id])
+  currentLevel       LearningLevel @default(Beginner)
+  targetExam         String?
+  overallScore       Float         @default(0.0)
+  consistencyStreak  Int           @default(0)
+  lastActiveAt       DateTime      @default(now())
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  assignedFaculty    FacultyStudentAssignment[]
+  enrolledSubjects   StudentSubject[]
+  attempts           TestAttempt[]
+  results            AssessmentResult[]
+  topicPerformances  TopicPerformance[]
+  dailyProgress      DailyProgress[]
+  milestones         LearningMilestone[]
+  feedbackReceived   FacultyFeedback[]
+  meetingRecommendations MeetingRecommendation[]
+  meetings           FacultyMeeting[]
+
+  @@index([rollNumber])
+  @@index([departmentId])
+  @@index([currentLevel])
+}
+
+// 3. Faculty Profile
+model FacultyProfile {
+  id           String     @id @default(cuid())
+  userId       String     @unique
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+  designation  String     @default("Assistant Professor")
+  officeHours  String?
+  cabinNumber  String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  assignedStudents FacultyStudentAssignment[]
+  feedbackGiven    FacultyFeedback[]
+  meetings         FacultyMeeting[]
+
+  @@index([departmentId])
+}
+
+// 4. Department
+model Department {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  code        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sections        Section[]
+  subjects        Subject[]
+  studentProfiles StudentProfile[]
+  facultyProfiles FacultyProfile[]
+}
+
+// 5. Section
+model Section {
+  id           String     @id @default(cuid())
+  name         String
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  students StudentProfile[]
+
+  @@unique([departmentId, name])
+}
+
+// 6. Faculty Student Assignment
+model FacultyStudentAssignment {
+  id         String         @id @default(cuid())
+  facultyId  String
+  faculty    FacultyProfile @relation(fields: [facultyId], references: [id], onDelete: Cascade)
+  studentId  String
+  student    StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  assignedAt DateTime       @default(now())
+  notes      String?
+
+  @@unique([facultyId, studentId])
+  @@index([facultyId])
+  @@index([studentId])
+}
+
+// 7. Subject
+model Subject {
+  id           String     @id @default(cuid())
+  code         String     @unique
+  name         String
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  description  String?
+  creditHours  Int        @default(3)
+  iconName     String?    @default("BookOpen")
+  color        String?    @default("#6D28D9")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  enrolledStudents  StudentSubject[]
+  documents         StudyDocument[]
+  topics            ExtractedTopic[]
+  questions         Question[]
+  assessments       Assessment[]
+  topicPerformances TopicPerformance[]
+
+  @@index([code])
+  @@index([departmentId])
+}
+
+// 8. Student Subject Enrollment
+model StudentSubject {
+  id         String         @id @default(cuid())
+  studentId  String
+  student    StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subjectId  String
+  subject    Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  enrolledAt DateTime       @default(now())
+  progressPct Float         @default(0.0)
+
+  @@unique([studentId, subjectId])
+  @@index([studentId])
+  @@index([subjectId])
+}
+
+// 9. Study Document
+model StudyDocument {
+  id               String         @id @default(cuid())
+  title            String
+  originalFilename String
+  fileSize         Int
+  filePath         String
+  fileType         String         @default("application/pdf")
+  subjectId        String
+  subject          Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  uploadedById     String
+  uploadedBy       User           @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  status           DocumentStatus @default(Pending)
+  pageCount        Int            @default(0)
+  wordCount        Int            @default(0)
+  chunkCount       Int            @default(0)
+  errorMessage     String?
+  extractedSnippet String?        @db.Text
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  processingJobs DocumentProcessingJob[]
+  topics         ExtractedTopic[]
+  questions      Question[]
+  assessments    Assessment[]
+
+  @@index([subjectId])
+  @@index([uploadedById])
+  @@index([status])
+}
+
+// 10. Document Processing Job
+model DocumentProcessingJob {
+  id          String        @id @default(cuid())
+  documentId  String
+  document    StudyDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  status      DocumentStatus @default(Pending)
+  startedAt   DateTime      @default(now())
+  completedAt DateTime?
+  error       String?
+
+  @@index([documentId])
+}
+
+// 11. Extracted Topic
+model ExtractedTopic {
+  id              String               @id @default(cuid())
+  documentId      String
+  document        StudyDocument        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  subjectId       String
+  subject         Subject              @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  name            String
+  summary         String?              @db.Text
+  difficultyLevel AssessmentDifficulty @default(Medium)
+  importanceScore Int                  @default(80)
+  createdAt       DateTime             @default(now())
+
+  questions Question[]
+
+  @@index([documentId])
+  @@index([subjectId])
+  @@index([name])
+}
+
+// 12. Question
+model Question {
+  id            String               @id @default(cuid())
+  documentId    String?
+  document      StudyDocument?       @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  subjectId     String
+  subject       Subject              @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  topicId       String?
+  topic         ExtractedTopic?      @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  topicName     String?
+  type          QuestionType         @default(MCQ)
+  prompt        String               @db.Text
+  codeSnippet   String?              @db.Text
+  correctAnswer String               @db.Text
+  explanation   String               @db.Text
+  difficulty    AssessmentDifficulty @default(Medium)
+  isSample      Boolean              @default(false)
+  createdAt     DateTime             @default(now())
+
+  options             QuestionOption[]
+  assessmentQuestions AssessmentQuestion[]
+  studentAnswers      StudentAnswer[]
+
+  @@index([subjectId])
+  @@index([topicId])
+  @@index([type])
+}
+
+// 13. Question Option
+model QuestionOption {
+  id         String   @id @default(cuid())
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  label      String
+  text       String   @db.Text
+
+  @@index([questionId])
+}
+
+// 14. Assessment
+model Assessment {
+  id              String               @id @default(cuid())
+  title           String
+  description     String?              @db.Text
+  subjectId       String
+  subject         Subject              @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  documentId      String?
+  document        StudyDocument?       @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  createdById     String
+  createdBy       User                 @relation(fields: [createdById], references: [id])
+  durationMinutes Int                  @default(15)
+  totalQuestions  Int                  @default(5)
+  totalPoints     Int                  @default(50)
+  passPercentage  Int                  @default(70)
+  type            AssessmentType       @default(MIXED)
+  difficulty      AssessmentDifficulty @default(Medium)
+  isAiGenerated   Boolean              @default(true)
+  isSample        Boolean              @default(false)
+  createdAt       DateTime             @default(now())
+
+  questions AssessmentQuestion[]
+  attempts  TestAttempt[]
+
+  @@index([subjectId])
+  @@index([documentId])
+}
+
+// 15. Assessment Question Join
+model AssessmentQuestion {
+  id           String     @id @default(cuid())
+  assessmentId String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  questionId   String
+  question     Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  orderIndex   Int        @default(0)
+  points       Int        @default(10)
+
+  @@unique([assessmentId, questionId])
+  @@index([assessmentId])
+}
+
+// 16. Test Attempt
+model TestAttempt {
+  id               String        @id @default(cuid())
+  assessmentId     String
+  assessment       Assessment    @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  studentId        String
+  student          StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  startedAt        DateTime      @default(now())
+  submittedAt      DateTime?
+  expiresAt        DateTime
+  durationSeconds  Int           @default(0)
+  status           AttemptStatus @default(IN_PROGRESS)
+  score            Float         @default(0.0)
+  percentage       Float         @default(0.0)
+  passed           Boolean       @default(false)
+  totalQuestions   Int           @default(0)
+  correctCount     Int           @default(0)
+  flaggedQuestions String[]
+
+  answers  StudentAnswer[]
+  result   AssessmentResult?
+  feedback FacultyFeedback[]
+
+  @@index([assessmentId])
+  @@index([studentId])
+  @@index([status])
+}
+
+// 17. Student Answer
+model StudentAnswer {
+  id              String      @id @default(cuid())
+  attemptId       String
+  attempt         TestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId      String
+  question        Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  studentResponse String      @db.Text
+  isCorrect       Boolean     @default(false)
+  pointsAwarded   Float       @default(0.0)
+  timeSpentSeconds Int        @default(0)
+  feedback        String?
+
+  @@index([attemptId])
+  @@index([questionId])
+}
+
+// 18. Assessment Result
+model AssessmentResult {
+  id              String        @id @default(cuid())
+  attemptId       String        @unique
+  attempt         TestAttempt   @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  studentId       String
+  student         StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  totalScore      Float
+  maxScore        Float
+  percentage      Float
+  passed          Boolean
+  grade           String
+  levelAchieved   LearningLevel
+  durationSeconds Int
+  strengths       String[]
+  weakTopics      String[]
+  recommendations String[]
+  submittedAt     DateTime      @default(now())
+
+  @@index([studentId])
+}
+
+// 19. Topic Performance
+model TopicPerformance {
+  id               String        @id @default(cuid())
+  studentId        String
+  student          StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subjectId        String
+  subject          Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  topicName        String
+  attemptsCount    Int           @default(0)
+  correctCount     Int           @default(0)
+  masteryPercentage Float        @default(0.0)
+  currentLevel     LearningLevel @default(Beginner)
+  lastEvaluatedAt  DateTime      @default(now())
+
+  @@unique([studentId, subjectId, topicName])
+  @@index([studentId])
+  @@index([subjectId])
+}
+
+// 20. Daily Progress
+model DailyProgress {
+  id                String         @id @default(cuid())
+  studentId         String
+  student           StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  date              DateTime       @db.Date
+  studyMinutes      Int            @default(0)
+  testsAttempted    Int            @default(0)
+  averageScore      Float          @default(0.0)
+  consistencyPoints Int            @default(10)
+
+  @@unique([studentId, date])
+  @@index([studentId])
+}
+
+// 21. Learning Milestone
+model LearningMilestone {
+  id          String         @id @default(cuid())
+  studentId   String
+  student     StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  title       String
+  description String
+  badgeIcon   String
+  category    String
+  achievedAt  DateTime       @default(now())
+
+  @@index([studentId])
+}
+
+// 22. Faculty Feedback
+model FacultyFeedback {
+  id         String         @id @default(cuid())
+  facultyId  String
+  faculty    FacultyProfile @relation(fields: [facultyId], references: [id], onDelete: Cascade)
+  studentId  String
+  student    StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  attemptId  String?
+  attempt    TestAttempt?   @relation(fields: [attemptId], references: [id], onDelete: SetNull)
+  title      String
+  message    String         @db.Text
+  isPrivate  Boolean        @default(true)
+  isRead     Boolean        @default(false)
+  createdAt  DateTime       @default(now())
+
+  @@index([facultyId])
+  @@index([studentId])
+}
+
+// 23. Meeting Recommendation
+model MeetingRecommendation {
+  id            String         @id @default(cuid())
+  studentId     String
+  student       StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  reason        String
+  priority      PriorityLevel  @default(MEDIUM)
+  triggerMetric String?
+  isResolved    Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+
+  @@index([studentId])
+}
+
+// 24. Faculty Meeting
+model FacultyMeeting {
+  id              String         @id @default(cuid())
+  facultyId       String
+  faculty         FacultyProfile @relation(fields: [facultyId], references: [id], onDelete: Cascade)
+  studentId       String
+  student         StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  title           String
+  agenda          String         @db.Text
+  scheduledAt     DateTime
+  durationMinutes Int            @default(30)
+  status          MeetingStatus  @default(SCHEDULED)
+  meetingUrl      String?
+  notes           String?        @db.Text
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([facultyId])
+  @@index([studentId])
+  @@index([status])
+}
+
+// 25. Notification
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      NotificationType @default(INFO)
+  link      String?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId])
+}
+
+// 26. Audit Log
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  resource  String
+  details   String   @db.Text
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// 27. System Setting
+model SystemSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String   @db.Text
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@index([key])
+}

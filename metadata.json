@@ -1,0 +1,6 @@
+{
+  "name": "EduPulse - AI Student Progress & Assessment Platform",
+  "description": "Comprehensive AI-powered student progress tracking, automated assessment generation from course PDFs, analytics, faculty mentorship, and administrator dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
